@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.io.StringReader;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -546,4 +547,63 @@ public class NotificationHub {
 		mIsRefreshNeeded = true;
 	}
 	
+	/**
+     * Returns the list of existing registration
+     *
+     * @param pnsHandle PNS specific identifier
+     * @throws Exception
+     * @return The list of retrieved registrations
+     */
+    public ArrayList<Registration> getRegistrationInformationList(String pnsHandle) throws Exception {
+        ArrayList<Registration> registrations = new ArrayList<>();
+
+        // get existing registrations
+        Connection conn = new Connection(mConnectionString);
+
+        String filter = PnsSpecificRegistrationFactory.getInstance().getPNSHandleFieldName() + " eq '" + pnsHandle + "'";
+
+        String resource = mNotificationHubPath + "/Registrations/?$filter=" + URLEncoder.encode(filter, "UTF-8");
+        String content = null;
+        String response = conn.executeRequest(resource, content, XML_CONTENT_TYPE, "GET");
+
+        DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+        builder.setEntityResolver(new EntityResolver() {
+            @Override
+            public InputSource resolveEntity(String publicId, String systemId) throws SAXException, IOException {
+                return null;
+            }
+        });
+
+        Document doc = builder.parse(new InputSource(new StringReader(response)));
+
+        doc.getDocumentElement().normalize();
+        Element root = doc.getDocumentElement();
+
+        //for each registration, parse it
+        NodeList entries = root.getElementsByTagName("entry");
+        for (int i = 0; i < entries.getLength(); i++) {
+            Registration registration;
+            Element entry = (Element) entries.item(i);
+            String xml = getXmlString(entry);
+            if (PnsSpecificRegistrationFactory.getInstance().isTemplateRegistration(xml)) {
+                registration = PnsSpecificRegistrationFactory.getInstance().createTemplateRegistration(mNotificationHubPath);
+            } else {
+                registration = PnsSpecificRegistrationFactory.getInstance().createNativeRegistration(mNotificationHubPath);
+            }
+
+            registration.loadXml(xml, mNotificationHubPath);
+            registrations.add(registration);
+        }
+
+        return registrations;
+    }
+
+    /**
+     * Delete the client registration
+     * @param registrationId    The registration id to delete
+     * @throws Exception
+     */
+    public void deleteRegistration(String registrationId) throws Exception {
+        deleteRegistrationInternal(Registration.DEFAULT_REGISTRATION_NAME, registrationId);
+    }
 }
